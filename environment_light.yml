@@ -1,0 +1,22 @@
+name: seismic_source_model
+channels:
+  - conda-forge
+dependencies:
+  - configargparse=1.7
+  - dask=2023.5.1
+  - geopandas=0.12.2
+  - h5netcdf=1.1.0
+  - h5py=3.8.0
+  - matplotlib=3.7.1
+  - numpy=1.24.2
+  - pandas=1.5.3
+  - pyproj=3.5.0
+  - pytest=7.4.0
+  - pytest-cov=4.1.0
+  - python=3.11.1
+  - rioxarray=0.14.0
+  - scipy=1.10.1
+  - sqlite=3.40.0
+  - tqdm=4.65.0
+  - xarray=2023.3.0
+  - xarray-datatree=0.0.12
