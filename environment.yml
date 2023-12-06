@@ -1,4 +1,4 @@
-name: seismic_source_modelenvironment.yml
+name: seismic_source_model
 channels:
   - conda-forge
   - defaults
