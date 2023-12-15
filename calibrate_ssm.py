@@ -66,10 +66,10 @@ def main(config_path):
 
     # Save section
     calib_group = config["data_sinks"]["calibration_data"]["group"]
-    xf.store(ar_posterior, 'calibration_data', config, group=f"{calib_group}/activity_rate_model", mode="w")
-    xf.store(mag_posterior, 'calibration_data', config, group=f"{calib_group}/magnitude_model", mode="a")
-    xf.store(stress_posterior, 'calibration_data', config, group=f"{calib_group}/dsm_pmf", mode="a")
-    xf.store(catalogue, 'calibration_data', config, group=f"{calib_group}/earthquake_data", mode="a")
+    xf.store(ar_posterior, 'calibration_data', config, group="activity_rate_model", mode="w")
+    xf.store(mag_posterior, 'calibration_data', config, group="magnitude_model", mode="a")
+    xf.store(stress_posterior, 'calibration_data', config, group="dsm_pmf", mode="a")
+    xf.store(catalogue, 'calibration_data', config, group="earthquake_data", mode="a")
 
 
 if __name__ == "__main__":
