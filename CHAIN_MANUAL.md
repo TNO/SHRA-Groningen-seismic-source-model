@@ -30,21 +30,24 @@ internal draft report from NAM (_Note for File: Finite rupture simulation for gr
 seismic hazard and risk analysis for the Groningen gas field_)
 
 
-- Ground motion models (part of [`SHRA-Groningen-hazard_risk_models`](https://github.com/TNO/SHRA-Groningen-hazard-risk-models) repository)
+- Ground motion models (GMM, part of [`SHRA-Groningen-hazard_risk_models`](https://github.com/TNO/SHRA-Groningen-hazard-risk-models) repository)
     - [V5, Bommer et al., 2018](https://nam-onderzoeksrapporten.data-app.nl/reports/download/groningen/en/52a1edec-6824-4ab3-8d92-3294c9cbec3a); 
     - [V6, Bommer et al., 2019](https://nam-onderzoeksrapporten.data-app.nl/reports/download/groningen/en/b66dd73e-9ff9-4be8-9302-5a2b514414bd); 
     - [V7, Bommer et al., 2021](https://nam-onderzoeksrapporten.data-app.nl/reports/download/groningen/en/96b7a3b0-98a7-4eaf-99bd-465b35f90ec8).
 
-  For models V5 and V6, TNO recommendations regarding the period-to-period correlation structure at site-response level
+GMM model V5 is only partially implemented for reference, and not accommodated in the entire chain. For models V5 and V6, TNO recommendations 
+regarding the period-to-period correlation structure at site-response level
 according to [TNO report R11961, 2022](https://www.nlog.nl/sites/default/files/2023-07/tno2022_r11961_sdra_status_rapport_2022_-_final_signed_gelakt.pdf) 
-are implemented as an optional component. 
+are implemented as an option. 
 
 
-- Fragility and consequence models [`SHRA-Groningen-hazard_risk_models`](https://github.com/TNO/SHRA-Groningen-hazard-risk-models) repository)
+- Fragility and consequence models (FCM, part of [`SHRA-Groningen-hazard_risk_models`](https://github.com/TNO/SHRA-Groningen-hazard-risk-models) repository)
     - [V5, Crowley & Pinho, 2017](https://nam-onderzoeksrapporten.data-app.nl/reports/download/groningen/en/aaa228dc-71a3-4919-a560-571a4b262a9a); 
     - [V6, Crowley et al., 2019](https://nam-onderzoeksrapporten.data-app.nl/reports/download/groningen/en/85c5dae6-464f-4311-95bc-9b6a21ddf3a8); 
     - [V7, Crowley & Pinho, 2020](https://nam-onderzoeksrapporten.data-app.nl/reports/download/groningen/en/9d8819b7-f0c5-4089-a036-71e755fda328);
     - [TNO 2020](https://open.overheid.nl/documenten/ronl-9884be7a-f42d-495a-b771-22efc7716332/pdf) <br>
+
+FCM models V5 and V6 are only partially implemented for reference, and not accommodated in the full chain.
 
 - The [`SHRA-Groningen-chaintools`](https://github.com/TNO/SHRA-Groningen-chaintools) repository does not contain models, but generic functionality that is 
 used in both the `seismic_source_model` and `hazard_risk_models` code repositories.
@@ -145,15 +148,17 @@ lookup tables and prep-files need to be pre-calculated: <br>
 - exposure prep
 
 >`mamba activate hazard_risk_models` <br>
-`python rupture_prep.py prep_config.yml` <br>
-`python gmm_tables.py prep_config.yml` <br>
-`python hazard_prep.py prep_config.yml` <br>
-`python fcm_tables.py prep_config.yml` <br>
-`python im_prep.py prep_config.yml` <br>
-`python risk_prep.py prep_config.yml` <br>
-`python exposure_prep.py prep_config.yml` <br>
+`python parse_input.py hr_config.yml` <br>
+`python rupture_prep.py hr_config.yml` <br>
+`python gmm_tables.py hr_config.yml` <br>
+`python hazard_prep.py hr_config.yml` <br>
+`python fcm_tables.py hr_config.yml` <br>
+`python im_prep.py hr_config.yml` <br>
+`python risk_prep.py hr_config.yml` <br>
+`python exposure_prep.py hr_config.yml` <br>
 
-An example `prep_config.yml` file is provided in the `hazard_risk_models` repository.
+An example `hr_config.yml` file is provided in the 
+[`hazard_risk_models`](https://github.com/TNO/SHRA-Groningen-hazard-risk-models) repository.
 
 
 ### Running the 'backbone' chain ###
@@ -170,10 +175,9 @@ etc), calibrate the source model on the available earthquake data, and create a 
 We switch Python environment and then combine the seismicity forecast with the pre-calculated lookup tables to generate
 results for hazard and risk.<br>
 `mamba activate hazard_risk_models` <br>
-`python source_integrator.py source_config.yml` (this step requires a rupture prep to be available)<br>
-`python hazard_integrator.py hazard_config.yml` (this step requires a hazard prep to be available) <br> 
-`python risk_integrator.py risk_config.yml` (this step requires a risk prep to be available) <br>
-`python exposure_integrator.py exposure_config.yml` (this step requires an exposure prep to be available) <br>
+`python source_integrator.py hr_config.yml` (this step requires a rupture prep and an exposure prep to be available)<br>
+`python hazard_integrator.py hr_config.yml` (this step requires a hazard prep and an exposure prep to be available) <br> 
+`python risk_integrator.py hr_config.yml` (this step requires a risk prep and an exposure prep to be available) <br>
 
 
 ### Visualizing the results ###
@@ -182,7 +186,6 @@ The calibration and forecast of the seismicity can be visualized with the script
 `visualize_forecast_results.py`. <br> <br>
 The hazard and risk results can be visualized in a variety of ways. There are currently no specific tools provided to 
 this end. This is foreseen in the upcoming update.
-
 
 
 ## License ##
