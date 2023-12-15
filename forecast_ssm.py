@@ -75,9 +75,9 @@ def main(config_path):
 
     # Store results
     forecast_group = config["data_sinks"]["forecast_data"]["group"]
-    xf.store(event_rate_forecast, "forecast_data", config, group=f"{forecast_group}/event_rate_forecast", mode="a")
-    xf.store(full_forecast, "forecast_data", config, group=f"{forecast_group}/forecast", mode="a")
-    xf.store(nr_event_pmf, "forecast_data", config, group=f"{forecast_group}/nr_event_pmf", mode="a")
+    xf.store(event_rate_forecast, "forecast_data", config, group="event_rate_forecast", mode="a")
+    xf.store(full_forecast, "forecast_data", config, group="forecast", mode="a")
+    xf.store(nr_event_pmf, "forecast_data", config, group="nr_event_pmf", mode="a")
 
 
 if __name__ == "__main__":
