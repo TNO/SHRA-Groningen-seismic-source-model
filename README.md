@@ -53,4 +53,4 @@ Example `config.yml` files are provided in [example_configs](/example_configs)
 ## License ##
 Licensed under the [EUPL](/LICENSE)
 
-Copyright (C) 2023 TNO
+Copyright (C) 2025 TNO
