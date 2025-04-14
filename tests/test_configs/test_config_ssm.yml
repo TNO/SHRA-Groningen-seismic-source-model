@@ -9,6 +9,8 @@ file_paths:
   fault_file: &fault_file [*base_path, fault_data_testing.h5]
   press_file: &press_file [*base_path, pressure_grid_testing.h5]
   compr_file: &compr_file [*base_path, compressibility_grid_testing.h5]
+  depth_file: &depth_file [*base_path, reservoir_depth_grid_testing.h5]
+  thickness_file: &thickness_file [*base_path, reservoir_thickness_grid_testing.h5]
   calibration_file: &calibration_file [*base_path, ssm_calibration_test.h5]
   forecast_file: &forecast_file [*base_path, ssm_forecast_test.h5]
 
@@ -49,8 +51,16 @@ data_stores:
     type: xarray_dataarray
     path: *compr_file
 
-  calibration_data: &calibration_data
+  reservoir_depth_data: &reservoir_depth_data
     type: xarray_dataarray
+    path: *depth_file
+
+  reservoir_thickness_data: &reservoir_thickness_data
+    type: xarray_dataarray
+    path: *thickness_file
+
+  calibration_data: &calibration_data
+    type: xarray_dataset
     path: *calibration_file
     group: calibration
 
@@ -71,6 +81,14 @@ dimensions: &dimensions
   hs_exp:
     length: 3
     interval: [4.25, 5.25]
+  factor_cm_d: # (RTiCM parameter from NAM2021 report)
+    values: 0.4
+  factor_cm_ref:  # (RTiCM parameter from NAM2021 report)
+    values: 0.8
+  b_exponent: # (RTiCM parameter from NAM2021 report)
+    values: 0.021
+  M_plastic:
+    values: [3]
   theta0:
     length: 5
     interval: [-23, -19]
@@ -83,41 +101,71 @@ dimensions: &dimensions
   etas_a:
     length: 5
     interval: [0, 1.8]
-  b_theta0:
+  b0:
     length: 5
-    interval: [0.7, 1.2]
-  b_theta1:
+    interval: [0.8, 2.5]
+  b_slope:
     length: 5
-    interval: [1.0E-5, 105, 5]
-  b_theta2:
+    interval: [0, 4000000]
+  b_low:
     length: 5
-    interval: [1.0E+6, 4.0E+7]
-
+    interval: [ 0.9, 1.5 ]
+  b_high:
+    length: 5
+    interval: [ 0.5, 1.0 ]
+  split_location:
+    length: 5
+    interval: [ 240, 269 ]
+  branch_mmax: &branch_mmax
+    values: [4.0, 4.5, 5.0, 5.5, 6.0, 6.5]
+  magnitude: &magnitude
+    length: 51
+    interval: [1.45, 6.55]
 # SECTION 2: MODULE SPECIFIC SETTINGS
-modules:
+# Used for traceability and reproducability purposes. Not required for running individual models
+
+# SECTION 3: TASKS
+tasks:
   calibrate_ssm:
-    data_sources:
-      eq_catalogue: *eq_catalogue
-      fault_data: *fault_data
-      pressure_data: *pressure_data
-      compressibility_data: *compressibility_data
-    data_sinks:
-      calibration_data: *calibration_data
-    dimensions: *dimensions
+    configuration:
+      data_sources:
+        eq_catalogue: *eq_catalogue
+        fault_data: *fault_data
+        pressure_data: *pressure_data
+        compressibility_data: *compressibility_data
+        reservoir_depth_data: *reservoir_depth_data
+        reservoir_thickness_data: *reservoir_thickness_data
+      data_sinks:
+        calibration_data: *calibration_data
+      dimensions: *dimensions
+      filters: # coordinates need to be in list to keep dimension
+        cm_grid_version: [ cm_NAM2018 ]
   forecast_ssm:
-    data_sources:
-      eq_catalogue: *eq_catalogue
-      fault_data: *fault_data
-      pressure_data: *pressure_data
-      compressibility_data: *compressibility_data
-      calibration_data: *calibration_data
-    data_sinks:
-      forecast_data: *forecast_data
-    dimensions: *dimensions
-    forecast_epochs:
-      [
-        2022,
-        2023,
-        2024,
-        2025
-      ]
+    configuration:
+      data_sources:
+        eq_catalogue: *eq_catalogue
+        fault_data: *fault_data
+        pressure_data: *pressure_data
+        compressibility_data: *compressibility_data
+        reservoir_depth_data: *reservoir_depth_data
+        reservoir_thickness_data: *reservoir_thickness_data
+        calibration_data: *calibration_data
+      data_sinks:
+        forecast_data: *forecast_data
+      dimensions:
+        branch_mmax: *branch_mmax
+        magnitude: *magnitude
+      forecast_epochs:
+        [
+          2022,
+          2023,
+          2024,
+          2025
+        ]
+  ssm_merge_forecast:
+    configuration:
+      data_sources:
+        forecast_data_linear: *forecast_data
+        forecast_data_rticm: *forecast_data
+      data_sinks:
+        forecast_data: *forecast_data

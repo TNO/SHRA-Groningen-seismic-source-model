@@ -1,0 +1,319 @@
+# SECTION 1: GENERIC SETTINGS
+run_name: my_seismic_source_model_run
+
+# SECTION 1.1: PATHS to FILES
+path:
+  # composite paths can be constructed by putting
+  # the components in square brackets
+  base_path: &base_path /home/abenfm/data/public_code_update_03_2025
+
+  # external (raw) data files
+  raw_thickness_file: &raw_thickness_file [ *base_path, inputfiles, ReservoirModel_thickness_20171013.csv ]
+  raw_fault_file: &raw_fault_file [ *base_path, inputfiles, Faultdata_Groningen.sqlite3 ]
+  raw_press_file: &raw_press_file [ *base_path, inputfiles, ReservoirModel_pressures_V1_2023.csv ]
+  raw_compr_file: &raw_compr_file [ *base_path, inputfiles, ReservoirModel_compressibility.csv ]
+  raw_compr_rticm_file: &raw_compr_rticm_file [ *base_path, inputfiles, ReservoirModel_compressibility_rticm.csv ]
+  raw_depth_file: &raw_depth_file [ *base_path, inputfiles, Horizon_Top_Rotliegend_50x50.csv ]
+
+  # reservoir polygon file (for spatial filtering of EQ catalogue)
+  calibration_polygon_file: &calibration_polygon_file [ *base_path, inputfiles, Groningen_field_outline.csv ]
+
+  # parsed input files
+  eq_file: &eq_file [ *base_path, parse_ssm, eq_cat.h5 ]
+  fault_file: &fault_file [ *base_path, parse_ssm, fault_data.h5 ]
+  press_file: &press_file [ *base_path, parse_ssm, pressure_grid.h5 ]
+  compr_file: &compr_file [ *base_path, parse_ssm, compressibility_grid.h5 ]
+  depth_file: &depth_file [ *base_path, parse_ssm, reservoir_depth_grid.h5 ]
+  thickness_file: &thickness_file [ *base_path, parse_ssm, reservoir_thickness_grid.h5 ]
+
+  # seismic source model files
+  calibration_file_linear: &calibration_file_linear [*base_path, calibrate_ssm, ssm_calibration_linear.h5]
+  calibration_file_rticm: &calibration_file_rticm [*base_path, calibrate_ssm, ssm_calibration_rticm.h5]
+  forecast_file_linear: &forecast_file_linear [*base_path, forecast_ssm, ssm_forecast_linear.h5]
+  forecast_file_rticm: &forecast_file_rticm [*base_path, forecast_ssm, ssm_forecast_rticm.h5]
+  forecast_file: &forecast_file [*base_path, forecast_ssm, ssm_forecast.h5]
+
+# SECTION 1.3: DATA SOURCES
+# We recognize the following data types:
+# - xarray_dataarray: a single xarray dataarray
+# - xarray_dataset: a single xarray dataset consisting of multiple dataarrays
+# - xarray_datatree: a tree of xarray datasets
+# - inline: a dictionary of data - useful for simple inputs
+
+data_stores:
+  data_input_formatted: &data_input_formatted
+    eq_catalogue: &eq_catalogue
+      type: xarray_dataset
+      path: *eq_file
+
+    fault_data:
+      type: xarray_dataset
+      path: *fault_file
+
+    pressure_data:
+      type: xarray_dataarray
+      path: *press_file
+
+    compressibility_data:
+      type: xarray_dataarray
+      path: *compr_file
+
+    reservoir_depth_data:
+      type: xarray_dataarray
+      path: *depth_file
+
+    reservoir_thickness_data:
+      type: xarray_dataarray
+      path: *thickness_file
+
+  calibration_data_linear: &calibration_data_linear
+    type: xarray_dataset
+    path: *calibration_file_linear
+    group: calibration
+
+  calibration_data_rticm: &calibration_data_rticm
+    type: xarray_dataset
+    path: *calibration_file_rticm
+    group: calibration
+
+  forecast_data_linear: &forecast_data_linear
+    type: xarray_dataarray
+    path: *forecast_file_linear
+    group: forecast
+
+  forecast_data_rticm: &forecast_data_rticm
+    type: xarray_dataarray
+    path: *forecast_file_rticm
+    group: forecast
+
+  forecast_data: &forecast_data
+    type: xarray_dataarray
+    path: *forecast_file
+    group: forecast
+
+  logic_tree: &logic_tree
+    type: xarray_dataset_inline
+    from_dict:
+      dims: [branch_rate, branche_mm, branch_mmax]
+      coords:
+        branch_rate:
+          dims: branch_rate
+          data: [elastic, elastic_plastic]
+        branch_mm:
+          dims: branch_mm
+          data: [linear_stress, split_thickness]
+        branch_mmax:
+          dims: branch_mmax
+          data: &data_mmax [4.0, 4.5, 5.0, 5.5, 6.0, 6.5]
+      data_vars:
+        w_rate:
+          dims: branch_rate
+          data: [0.5, 0.5]
+          attrs:
+            support_dims: branch_rate
+            distribution_type: probability_mass
+        w_mm:
+          dims: branch_mm
+          data: [0.3, 0.7]
+          attrs:
+            support_dims: branch_mm
+            distribution_type: probability_mass
+        w_mmax:
+          dims: branch_mmax
+          data: [ 0.27, 0.405, 0.1875, 0.1075, 0.025, 0.005 ]
+          attrs:
+            support_dims: branch_mmax
+            distribution_type: probability_mass
+
+# SECTION 2: MODEL PARAMETERS AND COORDINATES
+dimensions_linear: &dimensions_linear
+  rmax:
+    length: 5 # For speed, typically set to 5
+    interval: [0.375, 0.425]
+  sigma:
+    length: 6 # For speed, typically set to 6
+    interval: [2600, 3600]
+  hs_exp:
+    length: 5 # For speed, typically set to 5
+    interval: [4.75, 6.0]
+
+dimensions_rticm: &dimensions_rticm
+  M_plastic:
+    length: 8
+    interval: [2, 5.5]
+  rmax:
+    length: 5 # For speed, typically set to 5
+    interval: [ 0.385, 0.5 ]
+  sigma:
+    length: 6 # For speed, typically set to 6
+    interval: [ 2600, 3600 ]
+  hs_exp:
+    length: 7 # For speed, typically set to 5
+    interval: [ 3, 6 ]
+  factor_cm_d:
+    values: 0.4 # (RTiCM parameter from NAM2021 report)
+  factor_cm_ref:
+    values: 0.8 # (RTiCM parameter from NAM2021 report)
+  b_exponent:
+    values: 0.021 # (RTiCM parameter from NAM2021 report)
+
+dimensions_shared: &dimensions_shared
+  # activity rate model
+  theta0:
+    length: 50 # For speed, typically set to 50
+    interval: [-31, -27]
+  theta1:
+    length: 50 # For speed, typically set to 50
+    interval: [4.0E+6, 1.4E+7]
+  etas_k:
+    length: 13
+    interval: [0, 0.12]
+  etas_a:
+    length: 10
+    interval: [0, 1.8]
+
+  # stress-dependent magnitude model
+  b0:
+    length: 40
+    interval: [0.8, 2.5]
+  b_slope:
+    length: 40
+    interval: [0, 4.0E+6]
+
+  # thickness-dependent magnitude model
+  b_low:
+    length: 40
+    interval: [ 0.9, 1.5 ]
+  b_high:
+    length: 40
+    interval: [ 0.5, 1.0 ]
+  split_location:
+    length: 40
+    interval: [ 240, 269 ]
+
+  # magnitude and mmax ranges
+  branch_mmax: &branch_mmax
+    values: *data_mmax
+  magnitude: &magnitude
+    length: 103
+    interval: [1.45, 6.55]
+
+# SECTION 2: MODULE SPECIFIC SETTINGS
+# Used for traceability and reproducability purposes. Not required for running individual models
+
+
+# SECTION 3: TASKS
+tasks:
+  parse_input_ssm:
+    configuration:
+      data_sources:
+        raw_thickness_file:
+          type: raw
+          path: *raw_thickness_file
+        raw_fault_file:
+          type: raw
+          path: *raw_fault_file
+        raw_press_file:
+          type: raw
+          path: *raw_press_file
+        raw_compr_file:
+          type: raw
+          path: *raw_compr_file
+        raw_compr_rticm_file:
+          type: raw
+          path: *raw_compr_rticm_file
+        raw_eq_file:
+          type: rdsa
+        raw_depth_file:
+          type: raw
+          path: *raw_depth_file
+        calibration_polygon_file:
+          type: raw
+          path: *calibration_polygon_file
+      data_sinks:
+        <<: *data_input_formatted
+      # eq catalogue temporal range of interest: in yyyymmdd
+      calibration_date_range: [ 19950101, 20201231 ]
+
+  calibrate_ssm_linear:
+    configuration:
+      data_sources:
+        <<: *data_input_formatted
+      data_sinks:
+        calibration_data: *calibration_data_linear
+      dimensions:
+        <<: *dimensions_linear
+        <<: *dimensions_shared
+      filters:
+        cm_grid_version: [ cm_NAM2018 ]
+
+  calibrate_ssm_rticm:
+    configuration:
+      data_sources:
+        <<: *data_input_formatted
+      data_sinks:
+        calibration_data: *calibration_data_rticm
+      dimensions:
+        <<: *dimensions_rticm
+        <<: *dimensions_shared
+      filters:
+        cm_grid_version: [ cm_NAM2021 ]
+
+  forecast_ssm_linear:
+    configuration:
+      data_sources:
+        <<: *data_input_formatted
+        calibration_data: *calibration_data_linear
+      data_sinks:
+        forecast_data: *forecast_data_linear
+      dimensions:
+        branch_mmax: *branch_mmax
+        magnitude: *magnitude
+      filter:
+        cm_grid_version: [ cm_NAM2018 ]
+      forecast_epochs:
+        [2024, 2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033, 2034, 2035, 2036]
+
+  forecast_ssm_rticm:
+    configuration:
+      data_sources:
+        <<: *data_input_formatted
+        calibration_data: *calibration_data_linear
+      data_sinks:
+        forecast_data: *forecast_data_rticm
+      dimensions:
+        branch_mmax: *branch_mmax
+        magnitude: *magnitude
+      filter:
+        cm_grid_version: [ cm_NAM2021 ]
+      forecast_epochs:
+        [2024, 2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033, 2034, 2035, 2036]
+
+  ssm_merge_forecast:
+    configuration:
+      data_sources:
+        forecast_data_linear: *forecast_data_linear
+        forecast_data_rticm: *forecast_data_rticm
+      data_sinks:
+        forecast_data: *forecast_data
+
+  visualize_calibration_results_linear:
+    configuration:
+      data_sources:
+        calibration_data: *calibration_data_linear
+      out_path: *base_path
+      
+  visualize_calibration_results_rticm:
+    configuration:
+      data_sources:
+        calibration_data: *calibration_data_rticm
+      out_path: *base_path
+      
+  visualize_forecast_results:
+    configuration:
+      data_sources: 
+        forecast_data: *forecast_data
+        eq_catalogue: *eq_catalogue
+        logic_tree: *logic_tree
+      out_path: *base_path
+    

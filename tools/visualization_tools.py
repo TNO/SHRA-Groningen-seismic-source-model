@@ -1,12 +1,17 @@
 import os
+import calendar
+import numpy as np
+import pandas as pd
 import xarray as xr
+from pathlib import Path
 import matplotlib.pyplot as plt
-
-
+from matplotlib.dates import DateFormatter
+from tools.catalogue_tools import filter_attr_str2list
+from matplotlib.ticker import MultipleLocator
 # --------------------------------------------------
 # functions for visualization of calibration results
 # --------------------------------------------------
-def plot_grid_search(posterior_probabilities: xr.DataArray, log=None):
+def plot_and_save_grid_evaluation(posterior: xr.DataArray, fig_path: Path, ignore_dims=None):
 
     """
     Plot the posterior probability distributions marginalised to all combinations of two dimensions, and marginalised
@@ -14,7 +19,7 @@ def plot_grid_search(posterior_probabilities: xr.DataArray, log=None):
 
     Parameters
     ----------
-    posterior_probabilities : xr.DataArray
+    posterior : xr.DataArray
         Array with posterior probability values
     log : (optional) list
         Optional list with dimensions of model parameters (as strings) that should be plotted on a log scale
@@ -22,69 +27,58 @@ def plot_grid_search(posterior_probabilities: xr.DataArray, log=None):
     -------
 
     """
+    if ignore_dims is None:
+        ignore_dims = ['dsm_model']
 
-    posterior_probabilities = posterior_probabilities.squeeze()
-    rlikelihood = np.exp(posterior_probabilities - posterior_probabilities.max())
-    rlikelihood = rlikelihood / rlikelihood.sum()
-    ndim = len(posterior_probabilities.dims)
+    max_post = posterior[np.unravel_index(posterior.argmax(), posterior.shape)]
+    posterior = posterior.squeeze()
+    ndim = len(posterior.dims)
 
-    mle = posterior_probabilities[np.unravel_index(rlikelihood.argmax(), rlikelihood.shape)]
-    if log is None:
-        log = []
-
-    plt.close('all')
     plt.figure(figsize=(3.5 * ndim, 3.5 * ndim), dpi=300)
+
     plt_i = 1
-
-    num_dims = len(posterior_probabilities.dims)
-
-    for j, d_ref in enumerate(posterior_probabilities.dims):
-        yscale = 'linear'
-        if d_ref in log:
-            yscale = 'log'
-
-        for i, d in enumerate(posterior_probabilities.dims):
-            xscale = 'linear'
-            if d in log:
-                xscale = 'log'
-
-            if d != d_ref and i <= j:
+    for j, d_ref in enumerate(posterior.dims):
+        for i, d in enumerate(posterior.dims):
+            if i < j:
                 ax = plt.subplot(ndim, ndim, plt_i)
-                rlikelihood.sum(dim=[x for x in posterior_probabilities.dims if x != d and x != d_ref]) \
-                    .T.plot.pcolormesh(ax=ax, add_colorbar=False, xscale=xscale, yscale=yscale)
-                ax.plot(mle[d].values, mle[d_ref].values, marker='o', mfc='w', mec='k')
+                data = posterior.sum(dim=[x for x in posterior.dims if x != d and x != d_ref])
+                data.T.plot(ax=ax, add_colorbar=False)
+                ax.plot(max_post[d].values, max_post[d_ref].values, marker='o', mfc='w', mec='k')
                 ax.set_xlabel(d, fontsize=20)
-                ax.set_ylabel(d, fontsize=20)
+                ax.set_ylabel(d_ref, fontsize=20)
                 ax.set_title('')
-                if j!=num_dims-1: ax.set_xlabel('')
-                if i!=0: ax.set_ylabel('')
-                plt_i += 1
-            elif d == d_ref:
+                if j!=ndim-1:
+                    ax.set_xlabel('')
+                if i!=0:
+                    ax.set_ylabel('')
+            elif i==j:
                 ax = plt.subplot(ndim, ndim, plt_i)
-                data = rlikelihood.sum(dim=[x for x in posterior_probabilities.dims if x != d])
-                dx1 = rlikelihood.coords[d].values[1] - rlikelihood.coords[d].values[0]
-                dx2 = rlikelihood.coords[d].values[-1] - rlikelihood.coords[d].values[-2]
-                if xscale == 'log':
-                    bins = np.logspace(np.log10(rlikelihood.coords[d].values[0] - 0.5 * dx1),
-                                       np.log10(rlikelihood.coords[d].values[-1] + 0.5 * dx2),
-                                       rlikelihood.coords[d].size + 1)
-                else:
-                    bins = np.linspace(rlikelihood.coords[d].values[0] - 0.5 * dx1,
-                                       rlikelihood.coords[d].values[-1] + 0.5 * dx2,
-                                       rlikelihood.coords[d].size + 1)
+                data = posterior.sum(dim=[x for x in posterior.dims if x != d])
 
-                ax.hist(rlikelihood.coords[d].values, bins=bins, weights=data)
-                ax.plot(mle[d].values, 0, marker='o', mfc='w', mec='k')
+                dx = posterior.coords[d].values[1:] - posterior.coords[d].values[:-1]
+                # dx = posterior.coords[d].values[1] - posterior.coords[d].values[0]
+                bins = np.concatenate([
+                    [posterior.coords[d].values[0] - dx[0] * 0.5],
+                    posterior.coords[d].values[0] - dx[0] * 0.5 + dx.cumsum(),
+                    [posterior.coords[d].values[-1] + dx[-1] * 0.5]
+                ])
+                # bins = np.linspace(posterior.coords[d].values[0] - 0.5 * dx,
+                #                     posterior.coords[d].values[-1] + 0.5 * dx,
+                #                     posterior.coords[d].size + 1)
+                ax.hist(posterior.coords[d].values, bins=bins, weights=data)
+                ax.plot(max_post[d].values, 0, marker='o', mfc='w', mec='k')
                 ax.set_xlabel(d, fontsize=20)
-                if j!= num_dims-1: ax.set_xlabel('')
-                plt_i += 1
-            else:
-                plt_i += 1
+                ax.set_title('')
+                if j!= ndim-1:
+                    ax.set_xlabel('')
+            plt_i += 1
 
+    plt.savefig(fig_path, dpi=300)
+    plt.close()
 # -----------------------------------------------
 # functions for visualization of forecast results
 # -----------------------------------------------
-def plot_annual_event_density_maps(forecast: xr.DataArray, vis_epochs=None, gasyear=True):
+def plot_and_save_annual_event_density_maps(forecast: xr.DataArray, fig_path: str, vis_epochs=None, gasyear=True):
     """
     Create maps of the reservoir with the event density, for each timestep.
     Parameters
@@ -116,7 +110,7 @@ def plot_annual_event_density_maps(forecast: xr.DataArray, vis_epochs=None, gasy
     xlim, ylim = groningen_reservoir_map_limits()
 
     # get event rates for one magnitude and mmax bin, set them in the correct units
-    event_density = forecast.sel(time=epochs).isel(magnitude=0, mmax=-1) * convert_to_km2
+    event_density = forecast.sel(time=epochs).isel(magnitude=0, branch_mmax=-1) * convert_to_km2
     vmax = event_density.max().values
 
     # plot all panels in one go
@@ -157,6 +151,9 @@ def plot_annual_event_density_maps(forecast: xr.DataArray, vis_epochs=None, gasy
         ax.set_ylim(ylim)
         ax.set_frame_on(False)
         ax.set_visible(True)
+    
+    plt.savefig(fig_path, dpi=300)
+    plt.close()
 
 
 def plot_and_save_annual_magnitude_model(forecast: xr.DataArray, basedir: str, gasyear=True):
@@ -164,7 +161,7 @@ def plot_and_save_annual_magnitude_model(forecast: xr.DataArray, basedir: str, g
     Create and save figures of the forecasted magnitude-frequency relation, for each timestep.
     Parameters
     ----------
-    forecast : xr.DataArray
+    forecast : xr.DataArray 
         Forecasted event rates.
     basedir : str
         path to directory where figures are written to.
@@ -179,7 +176,7 @@ def plot_and_save_annual_magnitude_model(forecast: xr.DataArray, basedir: str, g
     ccfmd = forecast.sum(dim=['x', 'y'])
     time = np.array([a for a in forecast.time.values])
     mrange = forecast.magnitude.values
-    mmax_array = forecast.mmax.values
+    mmax_array = forecast.branch_mmax.values
 
     for index_year, year in enumerate(time):
         year = dateTimetoDecYear(year)
@@ -187,7 +184,7 @@ def plot_and_save_annual_magnitude_model(forecast: xr.DataArray, basedir: str, g
         for im, mmax in enumerate(mmax_array):
             plt.semilogy(
                 mrange,
-                ccfmd.isel(time=index_year, mmax=im),
+                ccfmd.isel(time=index_year, branch_mmax=im),
                 label='Mmax: {:.1f}'.format(float(mmax))
             )
         plt.legend()
@@ -201,21 +198,165 @@ def plot_and_save_annual_magnitude_model(forecast: xr.DataArray, basedir: str, g
             plt.title('Fieldwide forecast for {0:}/{1:}\n Total number of events: {2:.2f}'.format(
                 int(year),
                 str(int(year) + 1),
-                float(ccfmd.isel(time=index_year, mmax=im, magnitude=0)))
+                float(ccfmd.isel(time=index_year, branch_mmax=im, magnitude=0)))
             )
         else:
             plt.title('Fieldwide forecast for {0:}\n Total number of events: {1:.2f}'.format(
                 year,
-                float(ccfmd.isel(time=index_year, mmax=im, magnitude=0)))
+                float(ccfmd.isel(time=index_year, branch_mmax=im, magnitude=0)))
             )
+
+        if os.path.isdir(basedir) is False:
+            os.mkdir(basedir)
 
         plt.savefig(os.path.join(basedir, "fieldwide_frequency_magnitude_distribution_{}.png".format(int(year))),
                     dpi=300)
         plt.close()
 
+def bin_observed_events(eq_catalogue, modelled_time_intervals, incomplete_intervals=False):
+    """
+    Bin the observed earthquake catalogue in the requested time intervals.
+
+    Parameters
+    ----------
+    path_to_eq_catalogue : str or list
+        String or list of strings to earthquake catalogue .h5 file(s). Multiple files may be given, for instance the
+        training and testing catalogues used for ssm calibration. Catalogue .h5 files should be generated with the
+        parse_input.py function in this repo.
+    incomplete_intervals : bool
+        If False, data from incomplete time intervals are not returned. Incomplete time intervals are determined from
+        the 'date_filter' attribute in the catalogue .h5 files.
+    modelled_time_intervals : np.array
+        Array containing the modelled time intervals.
+
+    Returns
+    -------
+    observed_count : np.array
+        Array containing the number of observed events per time interval
+    bin_edges : np.array
+        Array containing the edges of the time interval. NOTE: length is len(observed_count) + 1
+    catalogue_start : float
+    catalogue_end : float
+
+    """
+
+    catalogue_start, catalogue_end = filter_attr_str2list(eq_catalogue.date_filter)
+    catalogue_start = pd.to_datetime(catalogue_start, format=r"%Y%m%d")
+    catalogue_end = pd.to_datetime(catalogue_end, format=r"%Y%m%d") + pd.DateOffset(days=1) - pd.DateOffset(seconds=1)
+
+    # get observed counts per modelled time interval and set time intervals without events to np.nan
+    observed_count, bin_edges = np.histogram(eq_catalogue.timestamp.date_time.values, modelled_time_intervals)
+    observed_count = np.where(observed_count < 1, np.nan, observed_count)
+
+    # if only complete years are desired:
+    if incomplete_intervals is False:
+        lower_bin_edges = bin_edges[:-1]
+        upper_bin_edges = bin_edges[1:]
+        time_mask = np.logical_and(
+            lower_bin_edges > catalogue_start,
+            upper_bin_edges < catalogue_end
+        )
+        observed_count[~time_mask] = np.nan
+
+    return observed_count, bin_edges, catalogue_start, catalogue_end
+
+
+def plot_and_save_fieldwide_event_counts(rate_forecast, event_count_uncertainty, calibration_catalogue_path, fig_path,
+                                         alternative_catalogue_path=None, plot_incomplete_intervals=False, reference_rate=None):
+    """
+    Produce a figure of the fieldwide observed and modelled event counts versus time.
+
+    Parameters
+    ----------
+    rate_forecast : xr.DataArray
+        Model forecast results for event rates.
+    event_count_uncertainty : xr.DataArray
+        Model forecast results for the event count uncertainty.
+    calibration_catalogue_path : xr.DataArray
+        String of earthquake catalogue .h5 file used for the model calibration.
+    alternative_catalogue_path
+        Optional. xr.DataArray
+    plot_incomplete_intervals : bool
+        Flag, if True the data in time intervals not entirely covered by the catalogues will be plotted as well.
+    Returns
+    -------
+
+    """
+
+    # observed event counts from calibration catalogue(s), used for reproducing SDRA figures
+    counts_calib_catalogue, intervals_calib_catalogue, start_calib, end_calib = bin_observed_events(
+        calibration_catalogue_path,
+        rate_forecast.time.values
+    )
+
+    if alternative_catalogue_path:
+        # overwrite with alternative catalogue
+        counts_calib_catalogue, intervals_calib_catalogue, _, _ = bin_observed_events(
+            alternative_catalogue_path,
+            rate_forecast.time.values
+        )
+
+
+    # Get modelled mean event counts
+    round_mean = rate_forecast.sum(dim=['x', 'y']).round()
+
+
+    # Get modelled event uncertainty
+    cumulative_event_count_uncertainty = event_count_uncertainty.cumsum(dim='nr_events').transpose('time', 'nr_events')
+    lower = np.argmax(cumulative_event_count_uncertainty.values[:-1] > 0.025, axis=1)
+    upper = np.argmax(cumulative_event_count_uncertainty.values[:-1] > 0.975, axis=1)
+    lower = np.asarray([[nr, nr] for nr in lower]).flatten()
+    upper = np.asarray([[nr, nr] for nr in upper]).flatten()
+
+    # determine ymax
+    ymax = max(50, upper.max() + 5)
+
+    ### start plotting ###
+    _, ax = plt.subplots(1, 1)
+    round_mean.plot.step(where='post', c='grey', label='simulated')
+
+    if reference_rate is not None:
+       round_ref = reference_rate.sum(dim=['x', 'y']).round() 
+       round_ref.plot.step(where='post', c='grey', label='reference', lw=0.75, ls=':')
+
+
+    plt.step(intervals_calib_catalogue[:-1], counts_calib_catalogue, where='post', lw=2, c='k', label='observed', zorder=10)
+
+    # plot uncertainty with custom step function
+    model_plot_years = np.asarray([[t,t] for t in rate_forecast.time.values]).flatten()[1:-1]
+    # final_year = model_plot_years[-1] + (model_plot_years[1] - model_plot_years[0])
+    # model_plot_years = np.concatenate((model_plot_years, [final_year]))
+    final_year = model_plot_years[-1]
+    ax.fill_between(model_plot_years, lower, upper, facecolor='silver', label='95% confidence bounds')
+    ax.fill_between([start_calib, end_calib], [0, 0], [ymax, ymax], facecolor=(0.0, 0.5, 0.1, 0.3), label='model calibration period')
+
+    # layout
+    ax.legend(loc=1)
+    xtick_major = np.arange(1995, 2100, 5)
+    xtick_minor = np.arange(1995, 2100, 1)
+    xtick_major = [pd.to_datetime(a, format=r'%Y') for a in xtick_major]
+    xtick_minor = [pd.to_datetime(a, format=r'%Y') for a in xtick_minor]
+    ytick_major = np.arange(0, ymax + 5, 5.0)
+    for x in xtick_major:
+        ax.plot((x, x), (0, ymax), '--', color="dimgray", lw=0.25)
+    for y in ytick_major:
+        ax.plot((0, float(final_year)), (y, y), '--', color="dimgray", lw=0.25)
+    ax.set_ylabel('Number of events per year')
+    ax.set_xlabel('Year')
+    ax.set_xticks(xtick_major)
+    ax.set_xticks(xtick_minor, labels=['' for _ in xtick_minor], minor=True)
+    ax.set_yticks(ytick_major)
+    ax.xaxis.set_major_formatter(DateFormatter(r'%Y'))
+    ax.yaxis.set_tick_params(which='minor', bottom=False)
+    ax.set_xlim([pd.to_datetime(1995, format=r'%Y'), final_year])
+    ax.set_ylim([0, ymax])
+    plt.title('')
+    plt.tight_layout()
+    plt.savefig(fig_path, dpi=300)
+    plt.close()
 
 def plot_fieldwide_event_counts(rate_forecast, event_count_uncertainty, calibration_catalogue_path,
-                                alternative_catalogue_path=None, plot_incomplete_intervals=False):
+                                         alternative_catalogue_path=None, plot_incomplete_intervals=False):
     """
     Produce a figure of the fieldwide observed and modelled event counts versus time.
 
@@ -494,9 +635,6 @@ def groningen_reservoir_map_limits():
 
     return map_xlim, map_ylim
 
-import numpy as np
-import calendar
-
 def dateTimetoDecYear(datetime):
     """
     Take a year in numpy.datetime64 format representation and output decimal notation (e.g. 2016.82764). Used for
@@ -531,3 +669,27 @@ def dateTimetoDecYear(datetime):
     day = monthdays + day + (hour / hoursPerDay) + (minute / minutesPerDay) + (second / secondsPerDay) - 1
     # -1 so that 2016-01-01T00:00:00 gives 2016.0000
     return year + (day / daysPerYear)
+
+def write_field_csv(forecast, logic_tree_weights, csv_path):
+
+    try:
+        mmax_weights = logic_tree_weights['branch_mmax']
+    except KeyError:
+        mmax_weights = [0.27, 0.405, 0.1875, 0.1075, 0.025, 0.005]
+        mmax_weights = xr.DataArray(mmax_weights, coords={'branch_mmax':[4.0, 4.5, 5.0, 5.5, 6.0, 6.5]})
+
+    forecast = xr.dot(forecast, mmax_weights).sum(dim=['x', 'y'])
+    times = pd.to_datetime(forecast.time)
+    if times[0].month == 10:
+        # Input is in gasyears
+        times = np.array([f'GY{t.year}/{t.year+1}' for t in times])[:,None]
+    else:
+        times = np.array([f'{t.year}' for t in times])[:,None]
+    
+    rate = np.round(forecast.interp(magnitude=forecast.magnitude[0]).values[:,None],2)
+    mags = [3.5, 3.6, 4.0, 4.5, 5.0]
+    prob = 100*(1.0 - np.exp(-forecast.interp(magnitude=mags).values))
+    prob = np.asarray([[f'{a:.2f}%' for a in b] for b in prob])
+
+    output = pd.DataFrame(np.concatenate([times, rate, prob], axis=-1), columns = ['Time', 'rate']+[f'M{a}' for a in mags])
+    output.to_csv(csv_path, index=False)

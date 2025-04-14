@@ -1,0 +1,47 @@
+base_path: &base_path ./data/
+
+data_sources:
+  raw_thickness_file:
+    type: raw
+    path: [ *base_path, inputfiles, ReservoirModel_thickness_20171013.csv ]
+  raw_fault_file:
+    type: raw
+    path: [ *base_path, inputfiles, Faultdata_Groningen.sqlite3 ]
+  raw_press_file:
+    type: raw
+    path: [ *base_path, inputfiles, ReservoirModel_pressures_V1_2023.csv ]
+  raw_compr_file:
+    type: raw
+    path: [ *base_path, inputfiles, ReservoirModel_compressibility.csv ]
+  raw_compr_rticm_file:
+    type: raw
+    path: [ *base_path, inputfiles, ReservoirModel_compressibility_rticm.csv ]
+  raw_eq_file:
+    type: rdsa
+  raw_depth_file:
+    type: raw
+    path: [ *base_path, inputfiles, Horizon_Top_Rotliegend_50x50.csv ]
+  calibration_polygon_file:
+    type: raw
+    path: [ *base_path, inputfiles, Groningen_field_outline.csv ]
+data_sinks:
+  eq_catalogue:   
+    type: xarray_dataset
+    path: [*base_path, parse_ssm, eq_cat.h5]
+  fault_data:
+    type: xarray_dataset
+    path: [*base_path, parse_ssm, fault_data.h5]
+  pressure_data:
+    type: xarray_dataarray
+    path: [*base_path, parse_ssm, pressure_grid.h5]
+  reservoir_depth_data:
+    type: xarray_dataarray
+    path: [*base_path, parse_ssm, reservoir_depth_grid.h5]
+  compressibility_data:
+    type: xarray_dataarray
+    path: [*base_path, parse_ssm, compressibility_grid.h5]
+  reservoir_thickness_data:
+    type: xarray_dataarray
+    path: [ *base_path, parse_ssm, reservoir_thickness_grid.h5 ]
+# eq catalogue temporal range of interest: in yyyymmdd
+calibration_date_range: [ 19950101, 20201231 ]
