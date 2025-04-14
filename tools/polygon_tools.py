@@ -80,4 +80,4 @@ def filter_catalogue_w_polygon(catalogue, polygon, inside=True):
         # Keep points outside the polygon
         keep = [not polygon.contains(p).values[0] for p in points]
 
-    return catalogue.sel({list(catalogue.dims.keys())[0]: keep})
+    return catalogue.sel({list(catalogue.sizes.keys())[0]: keep})

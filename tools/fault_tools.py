@@ -69,7 +69,7 @@ def _add_grad_l_r_t(data):
     length = []
     faults = np.unique(data["fault_id"])
     for fault in faults:
-        faultdata = data.sel({list(data.dims.keys())[0]: data["fault_id"] == fault})
+        faultdata = data.sel({list(data.sizes.keys())[0]: data["fault_id"] == fault})
         xfault = faultdata["x"]
         yfault = faultdata["y"]
 

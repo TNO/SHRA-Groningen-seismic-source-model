@@ -1,13 +1,14 @@
 import sys
 import time
 import datetime
+import xarray as xr
 from tools.bayes_tools import (
     poisson_log_likelihood,
     magnitude_log_likelihood,
     get_posterior_probability,
     get_combined_posterior,
 )
-from models.magnitudes import mag_tanh_bval
+from models.magnitudes import mag_covariate_linear, mag_covariate_split
 from models.rates import bo_2017_ll_terms
 from models.stresses import bo_2017_stress
 from models.etas import get_etas_rates
@@ -16,56 +17,75 @@ from chaintools.chaintools import tools_configuration as cfg
 from chaintools.chaintools import tools_xarray as xf
 
 
-def main(config_path):
+def main(args: list):
     """
     Perform the Bayesian calibration of the source model parameters. Store results to file
 
     Parameters
     ----------
-    config_path : str
-        The filepath to the configuration file (example included in the repository)
+    args : list of str
+        First entry has to be the filepath to the configuration file (example included in the repository)
+        Optionally contains '--task=TASK_NAME'
     """
 
-    module_name = "calibrate_ssm"
-    config = cfg.configure(config_path, module_name)
+    config = cfg.configure(args)
 
     # To make these files, run ssm_input_parser.py
     catalogue = xf.open("eq_catalogue", config)
     faults = xf.open("fault_data", config)
     pressure = xf.open("pressure_data", config)
     compaction_coef = xf.open("compressibility_data", config)
+    reservoir_depth = xf.open("reservoir_depth_data", config)
 
     # Define the parameter ranges for which to calibrate
     params = xf.prepare_ds(config)
+    reservoir_thickness = xf.open("reservoir_thickness_data", config)
 
-    # Calculate the stress
-    stress = bo_2017_stress(pressure, compaction_coef, faults, params.hs_exp, params.sigma, params.rmax)
+    stress = bo_2017_stress(
+        pressure,
+        compaction_coef,
+        reservoir_depth,
+        faults,
+        params
+    )
 
-    # Calculate the log-likelhood for the activity rate model
+    # Calculate the log-likelihood for the activity rate model
     background_res = bo_2017_ll_terms(stress, catalogue, params.theta0, params.theta1)
-    etas_res = get_etas_rates(catalogue, params.etas_k, params.etas_a)
+    etas_res = get_etas_rates(catalogue, etas_k=params.etas_k, etas_a=params.etas_a)
     ar_log_likelihood = poisson_log_likelihood(background_res, etas_res, use_loop=True)
 
-    # Calculate the log-likelhood for the magnitude model
+    # Calculate the log-likelihoods of the magnitude models and store in dataset:
+    mag_log_likelihood = xr.Dataset()
+    # Stress-dependent magnitude model
     stress_at_events = covariate_at_event(stress["dcs"], catalogue)
-    fmd_terms = mag_tanh_bval(stress_at_events, params.b_theta0, params.b_theta1, params.b_theta2)
-    mag_log_likelihood = magnitude_log_likelihood(fmd_terms, catalogue, dm=0.1, use_dask=True)
+    fmd_terms = mag_covariate_linear(stress_at_events, params.b0, params.b_slope)
+    mag_log_likelihood["linear_stress"] = magnitude_log_likelihood(fmd_terms, catalogue, dm=0.0, use_dask=True)
+    # Split-thickness magnitude model
+    thickness_at_events = covariate_at_event(reservoir_thickness, catalogue, rate=False)
+    fmd_terms = mag_covariate_split(thickness_at_events, params.b_low, params.b_high, params.split_location)
+    mag_log_likelihood["split_thickness"] = magnitude_log_likelihood(fmd_terms, catalogue, dm=0.0, use_dask=False)
+
+    # Rearrange activity rate ll arrays for the magnitude-frequency models
+    mm_selection = [mf for mf in mag_log_likelihood.data_vars]
+    ar_log_likelihood = ar_log_likelihood.expand_dims({'mm': mm_selection}).to_dataset(dim='mm')
 
     # Get posterior probability as well as combined post_prob of stress model parameters
-    ar_posterior = get_posterior_probability(ar_log_likelihood)
-    mag_posterior = get_posterior_probability(mag_log_likelihood)
+    with xr.set_options(keep_attrs=True):
+        ar_posterior = get_posterior_probability(ar_log_likelihood)
+        mag_posterior = get_posterior_probability(mag_log_likelihood)
+        keep_dims = [d for d in stress.dims if d not in ['x', 'y', 'time']]
+        stress_posterior = get_combined_posterior(
+            ar_posterior,
+            mag_posterior,
+            keep_dims=keep_dims
+        )
 
     # Include calibration and model information in the posterior before saving
     ar_posterior.attrs.update({f"calibration_{key}": catalogue.attrs[key] for key in catalogue.attrs.keys()})
+    ar_posterior.attrs.update({key: stress.attrs[key] for key in stress.attrs.keys()})
     mag_posterior.attrs.update({f"calibration_{key}": catalogue.attrs[key] for key in catalogue.attrs.keys()})
-    ar_posterior.attrs.update({"ar_model": "bo_2017"})
-    mag_posterior.attrs.update({"mag_model": "stress_tanh"})
-
-    # Get the posterior probability for the stress model, based on both the activity rate and magnitude models
-    stress_posterior = get_combined_posterior(ar_posterior, mag_posterior)
 
     # Save section
-    calib_group = config["data_sinks"]["calibration_data"]["group"]
     xf.store(ar_posterior, 'calibration_data', config, group="activity_rate_model", mode="w")
     xf.store(mag_posterior, 'calibration_data', config, group="magnitude_model", mode="a")
     xf.store(stress_posterior, 'calibration_data', config, group="dsm_pmf", mode="a")
@@ -75,7 +95,7 @@ def main(config_path):
 if __name__ == "__main__":
     time0 = time.time()
     # First command-line argument is passed as the path to the configuration file or else default is used
-    conf_path = sys.argv[1] if sys.argv[1:] else "example_configs/calibration_config.json"
-    main(conf_path)
+    args = sys.argv[1:] if sys.argv[1:] else ["example_configs/seismic_source_model_config.yml", "--task=calibrate_ssm_rticm"]
+    main(args)
     time1 = time.time()
     print(f"Done in {str(datetime.timedelta(seconds=int(time1 - time0)))} (hh:mm:ss)")

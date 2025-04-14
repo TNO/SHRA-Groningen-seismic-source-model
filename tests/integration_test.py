@@ -23,20 +23,20 @@ class IntegrationTests(TestCase):
 
         # arrange
         # -------
-        module = 'calibrate_ssm'
+        task = 'calibrate_ssm'
         data_sink = 'calibration_data'
         test_config_yaml = os.path.join(self.test_data_path, 'test_configs/test_config_ssm.yml')
-        module_config = cfg.configure(test_config_yaml, module)
+        module_config = cfg.configure([test_config_yaml], task)
         test_group = module_config['data_sinks'][data_sink]['group']
         calibration_expected_file = os.path.join(self.test_data_path, 'res/ssm_calibration_test.h5')
         with tempfile.TemporaryDirectory(prefix='temp') as test_out_dir:
             test_outcome_file = [test_out_dir, 'ssm_calibration_out.h5']
             module_config['data_sinks'][data_sink]['path'] = test_outcome_file
-            temp_config_path = self.build_config_file_for_module(module_config, test_out_dir, module=module)
+            temp_config_path = self.build_config_file_for_task(module_config, test_out_dir, task=task)
 
             # act
             # ---
-            main_calibrate(temp_config_path)
+            main_calibrate([temp_config_path,'--task',task])
 
             # assert
             # ------
@@ -66,20 +66,20 @@ class IntegrationTests(TestCase):
 
         # arrange
         # -------
-        module = 'forecast_ssm'
+        task = 'forecast_ssm'
         data_sink = 'forecast_data'
         test_config_yaml = os.path.join(self.test_data_path, 'test_configs/test_config_ssm.yml')
-        module_config = cfg.configure(test_config_yaml, module)
+        module_config = cfg.configure([test_config_yaml], task)
         test_group = module_config['data_sinks'][data_sink]['group']
         forecast_expected_file = os.path.join(self.test_data_path, 'res/ssm_forecast_test.h5')
         with tempfile.TemporaryDirectory(prefix='temp') as test_out_dir:
             test_outcome_file = [test_out_dir, 'ssm_forecast_out.h5']
             module_config['data_sinks'][data_sink]['path'] = test_outcome_file
-            temp_config_path = self.build_config_file_for_module(module_config, test_out_dir, module=module)
+            temp_config_path = self.build_config_file_for_task(module_config, test_out_dir,task=task)
 
             # act
             # ---
-            main_forecast(temp_config_path)
+            main_forecast([temp_config_path,'--task',task])
 
             # assert
             # ------
@@ -89,7 +89,10 @@ class IntegrationTests(TestCase):
             nr_event_pmf = self.load_from_file(outcome_path, group=f'{test_group}/nr_event_pmf')
             full_forecast = self.load_from_file(outcome_path, group=f'{test_group}/forecast')
 
-            expected_event_rate_forecast = self.load_from_file(forecast_expected_file, group='forecast/event_rate_forecast')
+            try:
+                expected_event_rate_forecast = self.load_from_file(forecast_expected_file, group='forecast/event_rate_forecast')
+            except:
+                print()
             expected_nr_event_pmf = self.load_from_file(forecast_expected_file, group='forecast/nr_event_pmf')
             expected_full_forecast = self.load_from_file(forecast_expected_file, group='forecast/forecast')
 
@@ -98,18 +101,18 @@ class IntegrationTests(TestCase):
             xr.testing.assert_allclose(full_forecast, expected_full_forecast)
 
     @staticmethod
-    def build_config_file_for_module(config: dict, out_dir: str, module: str, config_name: str = 'temp_config.yml') \
+    def build_config_file_for_task(config: dict, out_dir: str, task: str, config_name: str = 'temp_config.yml') \
             -> str:
         """
         Write and save a new configuration .yaml file for a specific module.
         :param config: Dictionary with configuration for a specific module
         :param out_dir: Directory where the configuration files will be stored
-        :param module: Name of the module
+        :param task: Name of the task
         :param config_name: Optional, name of the configuration file.
         :return: Returns the path to the new configuration file.
         """
 
-        temp_module_config = {'modules': {module: config}}
+        temp_module_config = {'tasks': {task: {'configuration':config}}}
         temp_yml_path = os.path.join(out_dir, config_name)
         with open(temp_yml_path, 'w') as f:
             yaml.dump(temp_module_config, f)

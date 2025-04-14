@@ -11,6 +11,8 @@ import geopandas as gpd
 import numpy as np
 import xarray as xr
 import rioxarray  # pylint: disable=unused-import
+import chaintools.chaintools.tools_xarray as xf
+
 
 def add_interevent_stats_to_catalogue(catalogue):
     """
@@ -46,7 +48,7 @@ def add_interevent_stats_to_catalogue(catalogue):
             ) / 31557600  # In Julian years (365.25 days)
             diff_mag[i, j] = second_mag - catalogue.minmag
 
-    dim_names = [list(catalogue.dims.keys())[0], "dim_1"]
+    dim_names = [list(catalogue.sizes.keys())[0], "dim_1"]
     vals = [catalogue[dim_names[0]], np.copy(catalogue[dim_names[0]])]
     coords = dict(zip(dim_names, vals))
 
@@ -72,8 +74,15 @@ def _parse_knmi_csv(eq_df):
         The dataframe containing the data, formatted for use in the module
     """
     date = eq_df.YYMMDD.astype(str)
-    time = eq_df.TIME.astype(int).astype(str).str.zfill(6)
-    eq_df["date_time"] = pd.to_datetime(date + time, format=r"%Y%m%d%H%M%S")
+
+    # old or new TIME format
+    if isinstance(eq_df.TIME[0], float):
+        time = eq_df.TIME.astype(int).astype(str).str.zfill(6)
+        eq_df["date_time"] = pd.to_datetime(date + time, format=r"%Y%m%d%H%M%S")
+    else:
+        time = eq_df.TIME.astype(str)
+        eq_df["date_time"] = pd.to_datetime(date + time, format=r"%Y%m%d%H:%M:%S")
+
     eq_df.rename(
         columns={"LAT": "lat", "LON": "lon", "DEPTH": "depth", "MAG": "magnitude", "LOCATION": "community"},
         inplace=True,
@@ -121,7 +130,7 @@ def _get_catalogue_rdsa(**pars):
         io.StringIO(request.text),
         header=None,
         names=["knmi_id", "date_time", "lat", "lon", "depth", "magnitude", "community"],
-    ).set_index("knmi_id")
+    ).rename({"knmi_id": "dim_0"}, axis="columns").set_index("dim_0")
     eq_df["date_time"] = pd.to_datetime(eq_df["date_time"])
     eq_df["timestamp"] = xr.DataArray(
         [pd.to_datetime(t).timestamp() for t in eq_df["date_time"].values], dims="date_time"
@@ -176,7 +185,7 @@ def _get_catalogue_file(path):
     return eq_gdf, data_source
 
 
-def get_catalogue(query_type="rdsa", **pars):
+def get_catalogue(pars: dict):
     """
     Get the KNMI data from any of the supported query types and parse to xarray.
     Use rioxarray to georeference the data according to CF conventions
@@ -199,22 +208,31 @@ def get_catalogue(query_type="rdsa", **pars):
         The dataset containing the data, formatted for use in the module
     """
     access_time = str(datetime.datetime.utcnow())
-    local_path = pars.pop("local_path")
+    local_path = pars.pop("path", None)
+    query_type = pars.pop("type", "raw")
     if query_type == "rdsa":
         eq_gdf, data_source = _get_catalogue_rdsa(**pars)
     elif query_type == "http":
         eq_gdf, data_source = _get_catalogue_http()
-    elif query_type == "file":
+    elif query_type == "file" or query_type == "raw":
+        local_path = xf.construct_path(local_path)
         eq_gdf, data_source = _get_catalogue_file(local_path)
         access_time = 0  # Not relevant for file access, and breaks reuseability
     else:
         raise UserWarning(
-            f'query type: {query_type} is unknown. Available queary types are: "rdsa", "http", and "file"'
+            f'query type: {query_type} is unknown. Available query types are: "rdsa", "http", and "file"'
         )
 
     eq_xr = xr.Dataset(eq_gdf).rio.write_crs(eq_gdf.crs, inplace=True).set_coords(["x", "y", "date_time"])
     eq_xr["geometry"] = eq_xr.geometry.astype(str)  # Fix dtype
     eq_xr = eq_xr.assign_attrs({"data_source": str(data_source), "access_time": access_time, "minmag": float("Nan")})
+
+    # ensure order from old to new events
+    eq_xr = eq_xr.sortby(eq_xr.date_time)
+
+    if eq_xr.dim_0.dtype == object or  eq_xr.dim_0.dtype == str:
+        eq_xr = eq_xr.assign_coords({'dim_0':range(len(eq_xr.dim_0))})
+
     return eq_xr
 
 
@@ -276,7 +294,7 @@ def filter_catalogue(catalogue, filter_dict):
     filters = np.concatenate([f[:, None] for f in filters], axis=1)
     full_filter = [np.all(f) for f in filters]
 
-    filtered_catalogue = catalogue.sel({list(catalogue.dims.keys())[0]: full_filter})
+    filtered_catalogue = catalogue.sel({list(catalogue.sizes.keys())[0]: full_filter})
     filtered_catalogue.attrs.update(filter_attrs)
 
     return filtered_catalogue
@@ -338,7 +356,7 @@ def covariate_at_event(cov, catalogue, rate=False, rate_clip=None):
             # If there is no time dimension in the covariate, interpolation is already done
             return local
 
-    # If we want a rate, we use this manual way to deterime a slope
+    # If we want a rate, we use this manual way to determine a slope
     t_ind_after = (cov.time > catalogue.date_time).argmax(dim='time')
     t_ind_before = t_ind_after - 1
     delta_t = ((cov.time[t_ind_after] - cov.time[t_ind_before]) / 1e9).astype(float) / 31557600.0

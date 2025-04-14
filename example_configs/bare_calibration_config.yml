@@ -1,0 +1,66 @@
+base_path: &base_path ./data/
+data_sources:
+  eq_catalogue:   
+    type: xarray_dataset
+    path: [*base_path, parse_ssm, eq_cat.h5]
+  fault_data:
+    type: xarray_dataset
+    path: [*base_path, parse_ssm, fault_data.h5]
+  pressure_data:
+    type: xarray_dataarray
+    path: [*base_path, parse_ssm, pressure_grid.h5]
+  reservoir_depth_data:
+    type: xarray_dataarray
+    path: [*base_path, parse_ssm, reservoir_depth_grid.h5]
+  compressibility_data:
+    type: xarray_dataarray
+    path: [*base_path, parse_ssm, compressibility_grid.h5]
+  reservoir_thickness_data:
+    type: xarray_dataarray
+    path: [ *base_path, parse_ssm, reservoir_thickness_grid.h5 ]
+data_sinks:
+  calibration_data:
+    type: xarray_dataarray
+    path: [*base_path, calibrate_ssm, ssm_calibration_linear.h5]
+    group: calibration
+dimensions:
+  rmax:
+    length: 5
+    interval: [0.375, 0.425]
+  sigma:
+    length: 6
+    interval: [2600, 3600]
+  hs_exp:
+    length: 5
+    interval: [4.25, 5.25]
+  theta0:
+    length: 50
+    interval: [-33, -28.5]
+  theta1:
+    length: 50
+    interval: [9.0E+6, 1.9E+7]
+  etas_k:
+    length: 13
+    interval: [0, 0.12]
+  etas_a:
+    length: 10
+    interval: [0, 1.8]
+  # stress-dependent magnitude model
+  b0:
+    length: 40
+    interval: [0.8, 2.5]
+  b_slope:
+    length: 40
+    interval: [0, 4.0E+6]
+  # thickness-dependent magnitude model
+  b_low:
+    length: 40
+    interval: [ 0.9, 1.5 ]
+  b_high:
+    length: 40
+    interval: [ 0.5, 1.0 ]
+  split_location:
+    length: 40
+    interval: [ 240, 269 ]
+filters:
+  cm_grid_version: [ cm_NAM2018 ]

@@ -5,6 +5,7 @@ Functionality related to Bayesian inference.
 import numpy as np
 import xarray as xr
 from dask.diagnostics import ProgressBar
+from chaintools.chaintools import tools_xarray as xf
 
 DASK_VERBOSE = True
 
@@ -15,12 +16,12 @@ def dask_compute(computation):
 
     Parameters
     ----------
-    computation: xarray.DataArray 
+    computation: xarray.DataArray or xarray.Dataset
         Array containing the delayed computation
 
     Returns
     -------
-    res: xarray.DataArray
+    res: xarray.DataArray or xarray.Dataset
         The computation result
     
     """
@@ -60,7 +61,6 @@ def magnitude_log_likelihood(fmd_terms, catalogue, dm, use_dask=False):
                 + np.log(np.log(10))
                 + np.log(10 ** (-bval * mrange))
                 - zetaval * (10 ** (1.5 * mrange) - 1)
-                + np.log(mstep)
         ).sum(dim=mrange.dims[0])
 
     b, zeta = fmd_terms["b"], fmd_terms["zeta"]
@@ -93,6 +93,8 @@ def magnitude_log_likelihood(fmd_terms, catalogue, dm, use_dask=False):
                 zeta_chunk = zeta
             chunks.append(ll_func(b_chunk, zeta_chunk, m, dm))
         ll = xr.concat(chunks, dim=largest_split_dim)
+
+    ll.attrs = fmd_terms.attrs
 
     return ll
 
@@ -194,13 +196,13 @@ def solve_chunked(background, etas):
     return chunk
 
 
-def get_posterior_probability(log_likelihood, prior=1):
+def get_posterior_probability(log_likelihood, prior=1, keep_dims=None):
     """
     Calculate the probability of a sample being drawn from the given model.
 
     Parameters
     ----------
-    log_likelihood : xr.DataArray
+    log_likelihood : xr.DataArray or xr.Dataset
         The log of the probability of the sample being drawn from the model.
     prior : float or xr.DataArray
         The prior probability of the sample being drawn from the model.
@@ -210,21 +212,27 @@ def get_posterior_probability(log_likelihood, prior=1):
     xr.DataArray
         The probability of the sample being drawn from the model.
     """
-
-    likelihood = np.exp(log_likelihood - log_likelihood.max())
-    likelihood /= likelihood.sum()
+    marginalize_dims = [d for d in log_likelihood.dims if d not in np.atleast_1d(keep_dims)]
+    likelihood = np.exp(log_likelihood - log_likelihood.max(dim=marginalize_dims))
+    likelihood /= likelihood.sum(dim=marginalize_dims)
 
     return prior * likelihood
 
 
-def get_combined_posterior(*args, fast=True, use_dask=False):
+def get_combined_posterior(*args, keep_dims=[], keep_dims_normalization=[], fast=True, use_dask=False):
     """
-    Combine several posteriors to get probability of shared parameters
+    Combine several posteriors to get non-normalised posterior of shared parameters
 
     Parameters
     ----------
-    *args : xr.DataArray
-        All posterior probability distributions
+    *args : xr.DataArray or xr.Dataset
+        All posterior probability distributions. If args are datasets, the number and names of the data_vars in each
+        dataset are expected to match.
+    keep_dims: list
+        (Optional) list of strings with dimensions not to sum over. Default is empty list.
+    keep_dims_normalization: list
+        (Optional) list of strings with dimensions not to sum over for final normalization to probability of 1.
+        Default is empty list.
     fast: boolean
         Collapse distributions before combining
     use_dask
@@ -232,31 +240,52 @@ def get_combined_posterior(*args, fast=True, use_dask=False):
 
     Returns
     -------
-    xr.DataArrays
+    xr.DataArray or xr.Dataset
         The posterior probability of parameters that are shared between all individual posterior distributions
     """
+    # Ensure proper typing
+    if isinstance(keep_dims_normalization, str):
+        keep_dims_normalization = [keep_dims_normalization]
 
-    all_dims = [a.dims for a in args]
-    unique_dims = np.unique([item for items in all_dims for item in items])
-    non_shared_dims = []
-    for dim in unique_dims:
-        dim_in_posterior = [dim in post.dims for post in args]
-        if not np.all(dim_in_posterior):
-            non_shared_dims.append(dim)
+    # Convert args to datasets if given as dataarrays
+    return_as = 'data_set'
+    if isinstance(args[0], xr.DataArray):
+        return_as = 'data_array'
+        args = [arg.to_dataset(name='__temp__') for arg in args]
 
-    if fast:
-        sum_dims = [[d for d in non_shared_dims if d in arg.dims] for arg in args]
-        summed_args = [arg.sum(dims) for arg, dims in zip(args, sum_dims)]
-        combined = xr.dot(*summed_args, dims="...", optimize="greedy")
-        combined /= combined.sum()
-        return combined
+    combined_out = xr.Dataset()
+    for data_var in args[0]:
+        # get target data_var from datasets
+        args_datavar = [arg[data_var] for arg in args]
 
-    if use_dask:
-        args = (a.chunk('auto') for a in args)
-        combined = xr.dot(*args, dims=non_shared_dims, optimize="greedy")
-        combined = dask_compute(combined)
+        # handle dimensions to sum over
+        all_dims = [a.dims for a in args_datavar]
+        unique_dims = np.unique([item for items in all_dims for item in items])
+        # correct unique_dims for keep_dims
+        unique_dims = [dim for dim in unique_dims if dim not in keep_dims]
+        non_shared_dims = []
+        # and start identifying the dimensions to sum over
+        for dim in unique_dims:
+            dim_in_posterior = [dim in post.dims for post in args_datavar]
+            if not np.all(dim_in_posterior):
+                non_shared_dims.append(dim)
+
+        if fast:
+            sum_dims = [[d for d in non_shared_dims if d in arg.dims] for arg in args_datavar]
+            summed_args = [arg.sum(dims) for arg, dims in zip(args_datavar, sum_dims)]
+            combined = xr.dot(*summed_args, dim=[], optimize="greedy")
+        elif use_dask:
+            args = (a.chunk('auto') for a in args_datavar)
+            combined = xr.dot(*args_datavar, dim=non_shared_dims, optimize="greedy")
+            combined = dask_compute(combined)
+        else:
+            combined = xr.dot(*args_datavar, dim=non_shared_dims, optimize="greedy")
+
+        marginalize_dims = [d for d in combined.dims if d not in keep_dims_normalization]
+        combined /= combined.sum(dim=marginalize_dims)
+        combined_out[data_var] = combined
+
+    if return_as == 'data_array':
+        return combined_out.to_array(dim='__temp__').squeeze(dim='__temp__', drop=True)
     else:
-        combined = xr.dot(*args, dims=non_shared_dims, optimize="greedy")
-
-    combined /= combined.sum()
-    return combined
+        return combined_out
