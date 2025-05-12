@@ -1,0 +1,435 @@
+# SECTION 1: GENERIC SETTINGS
+# TO BE USED WITH SSM commit 7cf53e49d07fb45d761cb13c521156b875cbaffd
+# TO BE USED WITH HR commit dafa1a6fdb9189161da898bdec6a29bbe9a62db2
+
+# SECTION 1.1: TRACEABILITY
+# Omitted here, only required for TNO interal tracing of results
+
+# SECTION 1.2: PATHS to FILES and DIRECTORIES
+paths:
+  # composite paths can be constructed by putting
+  # the components in square brackets
+  base_path: &base_path /home/osingas/psdra2023_public
+
+  # external (raw) data files
+  raw_fault_file: &raw_fault_file [ *base_path, inputfiles, Faultdata_Groningen.sqlite3 ]
+  raw_press_file: &raw_press_file [ *base_path, inputfiles, ReservoirModel_pressures_V1_2023.csv ]
+  raw_compr_file: &raw_compr_file [ *base_path, inputfiles, ReservoirModel_compressibility.csv ]
+  raw_eq_file: &raw_eq_file [ *base_path, inputfiles, Earthquake_catalogue_01-12-2023.csv ]
+  raw_edb_file: &edb_file [*base_path, inputfiles, EDBV7.1 PostP+Wierden_Extract.csv]
+
+  # reservoir polygon file (for spatial filtering of EQ catalogue)
+  calibration_polygon_file: &calibration_polygon_file [ *base_path, inputfiles, Groningen_field_outline.csv ]
+
+  # parsed input files
+  eq_file: &eq_file [ *base_path, parse_input_ssm, eq_cat.h5 ]
+  fault_file: &fault_file [ *base_path, parse_input_ssm, fault_data.h5 ]
+  press_file: &press_file [ *base_path, parse_input_ssm, pressure_grid.h5 ]
+  compr_file: &compr_file [ *base_path, parse_input_ssm, compressibility_grid.h5 ]
+
+  # seismic source model files
+  calibration_file: &calibration_file [*base_path, calibrate_ssm, ssm_calibration.h5]
+  forecast_file: &forecast_file [*base_path, forecast_ssm, ssm_forecast.h5]
+
+  #geological zones
+  zonation_file: &zonation_file [*base_path, inputfiles, Geological_zones_V6.zip]
+
+  # external input files and directories
+  gmm_input_path: &gmm_input_path [*base_path, inputfiles, model_res]
+  fcm_input_path: &fcm_input_path [*base_path, inputfiles, model_res]
+
+  # internal files: preparatory
+  config_file: &config_file [*base_path, parse_input, config.zarr]
+  gmm_tables_file: &gmm_tables_file [*base_path, gmm_tables, gmm_tables.zarr]
+  fcm_tables_file: &fcm_tables_file [*base_path, fcm_tables, fcm_tables.zarr]
+  hazard_prep_file: &hazard_prep_file [*base_path, hazard_prep, hazard_prep.zarr]
+  im_prep_file: &im_prep_file [*base_path, im_prep, im_prep.zarr]
+  risk_prep_file: &risk_prep_file [*base_path, risk_prep, risk_prep.zarr]
+  exposure_prep_file: &exposure_prep_file [*base_path, exposure_prep, exposure_prep.zarr]
+  rupture_prep_file: &rupture_prep_file [*base_path, rupture_prep, rupture_prep.zarr]
+
+  # internal files: operational
+  source_distribution_file:
+    &source_distribution_file [
+      *base_path,
+      source_integrator,
+      source_distribution.zarr,
+    ]
+  risk_file: &risk_file [*base_path, risk_integrator, risk.zarr]
+  risk_poe_file: &risk_poe_file [*base_path, risk_integrator_POE, risk.zarr]
+  hazard_file: &hazard_file [*base_path, hazard_integrator, hazard.zarr]
+  exposure_file: &exposure_file [*base_path, exposure, exposure.zarr]
+
+# SECTION 1.3: MODEL VERSIONS
+model_versions:
+  gmm_version: &gmm_version GMM-V7
+  fcm_version: &fcm_version FCM-TNO2020
+
+# SECTION 1.4 GENERIC SETTINGS
+
+
+# SECTION 1.5: DATA STORES
+# We recognize the following data types:
+# - xarray_dataarray: a single xarray dataarray
+# - xarray_dataset: a single xarray dataset consisting of multiple dataarrays
+# - xarray_datatree: a tree of xarray datasets
+#
+# The data types are independent of the file format / structure.
+# The file format is currently determined by the file extension, e.g.,
+# - .h5: HDF5 file
+# - .zarr: Zarr data store (actually a directory)
+# We advise to use .zarr exclusively for the data stores, as some of the
+# modules depend on its append functionality.
+# Within a file also a 'group' can be defined to create a data hierarchy.
+# Like file paths, group paths can be composed using square brackets
+data_stores:
+  data_input_formatted: &data_input_formatted
+    eq_catalogue: &eq_catalogue
+      type: xarray_dataset
+      path: *eq_file
+
+    fault_data:
+      type: xarray_dataset
+      path: *fault_file
+
+    pressure_data:
+      type: xarray_dataarray
+      path: *press_file
+
+    compressibility_data:
+      type: xarray_dataarray
+      path: *compr_file
+
+  config_tree: &config_tree
+    type: xarray_datatree
+    path: *config_file
+
+  calibration_data: &calibration_data
+    type: xarray_dataarray
+    path: *calibration_file
+    group: calibration
+
+  forecast_data: &forecast_data
+    type: xarray_dataarray
+    path: *forecast_file
+    group: forecast
+
+  forecast: &forecast
+    type: xarray_dataarray
+    path: *forecast_file
+    group: forecast/forecast
+
+  gmm_config: &gmm_config
+    type: xarray_dataset
+    path: *config_file
+    group: *gmm_version
+
+  fcm_config: &fcm_config
+    type: xarray_dataset
+    path: *config_file
+    group: *fcm_version
+
+  gmm_tables: &gmm_tables
+    type: xarray_dataset
+    path: *gmm_tables_file
+
+  fcm_tables: &fcm_tables
+    type: xarray_dataset
+    path: *fcm_tables_file
+
+  hazard_prep: &hazard_prep
+    type: xarray_dataset
+    path: *hazard_prep_file
+    group: *gmm_version
+
+  im_prep: &im_prep
+    type: xarray_dataset
+    path: *im_prep_file
+
+  risk_prep: &risk_prep
+    type: xarray_dataset
+    path: *risk_prep_file
+
+  exposure_grid: &exposure_grid
+    type: xarray_dataset
+    path: *exposure_prep_file
+    group: exposure_grid
+
+  exposure_database: &exposure_database
+    type: xarray_dataset
+    path: *exposure_prep_file
+    group: exposure_database
+
+  rupture_prep: &rupture_prep
+    type: xarray_dataset
+    path: *rupture_prep_file
+
+  source_distribution: &source_distribution
+    type: xarray_dataset
+    path: *source_distribution_file
+
+  risk: &risk
+    type: xarray_dataset
+    path: *risk_file
+
+  hazard: &hazard
+    type: xarray_dataset
+    path: *hazard_file
+
+  exposure: &exposure
+    type: xarray_dataset
+    path: *exposure_file
+
+  zonation: &zonation
+    type: geopandas
+    path: *zonation_file
+    dtype: { ID_V6: str }
+    index_col: ID_V6
+
+  edb: &edb
+    type: csv
+    path: *edb_file
+    dtype: { bag_building_id: str, wiede_flag: bool }
+    index_col: bag_building_id
+    crs: EPSG:28992
+    spatial_dims: [point_x, point_y]
+
+
+# SECTION 2: MODEL PARAMETERS AND COORDINATES
+dimensions: &dimensions
+  rmax:
+    length: 5
+    interval: [0.375, 0.425]
+  sigma:
+    length: 6
+    interval: [2600, 3600]
+  hs_exp:
+    length: 5
+    interval: [4.25, 5.25]
+  theta0:
+    length: 50
+    interval: [-33, -28.5]
+  theta1:
+    length: 50
+    interval: [9.0E+6, 1.9E+7]
+  etas_k:
+    length: 13
+    interval: [0, 0.12]
+  etas_a:
+    length: 10
+    interval: [0, 1.8]
+  b_theta0:
+    length: 40
+    interval: [0.7, 1.2]
+  b_theta1:
+    length: 40
+    interval: [1.0E-5, 105, 5]
+  b_theta2:
+    length: 40
+    interval: [1.0E+6, 4.0E+7]
+
+  # magnitude and mmax ranges
+  branch_mmax: &branch_mmax
+    values: [4.0, 4.5, 5.0, 5.5, 6.0, 6.5]
+
+  magnitude: &magnitude
+    length: 52
+    interval: [1.45, 6.55]
+  distance_hypocenter: &distance_hypocenter
+    length: 50 # reduce to speed up
+    sequence_spacing: log
+    interval: [3.0, 70.0]
+    units: km
+  distance_rupture: &distance_rupture
+    length: 50 # reduce to speed up
+    sequence_spacing: log
+    interval: [3.0, 70.0]
+    units: km
+  gm_reference: &gm_reference # allow for other ranges
+    length: 100 # reduce to speed up
+  gm_surface: &gm_surface
+    length: 100 # reduce to speed up
+
+# supplementary coordinates if more than one is needed for a dimension
+coordinates: &coordinates
+  SA_g_reference: &SA_g_reference
+    dim: gm_reference
+    sequence_spacing: log
+    interval: [1.0e-5, 10.0]
+    units: g
+  SA_reference: &SA_reference
+    <<: *SA_g_reference
+    multiplier: 981.0 # unit conversion from g to cm/s2
+    units: "cm/s2"
+  SA_g_surface: &SA_g_surface
+    <<: *SA_g_reference
+    dim: gm_surface
+  SA_surface: &SA_surface
+    <<: *SA_g_surface
+    multiplier: 981.0 # unit conversion from g to cm/s2
+    units: "cm/s2"
+
+# SECTION 2: MODULES and TASKS
+
+# SECTION 2.1: MODULES
+# Omitted here, only required for TNO interal managing of model runs
+
+# SECTION 2.2: TASK SPECIFIC SETTINGS
+modules:
+  parse_input_ssm:
+    data_sources:
+      raw_fault_file: *raw_fault_file
+      raw_press_file: *raw_press_file
+      raw_compr_file: *raw_compr_file
+      raw_eq_file: *raw_eq_file
+      calibration_polygon_file: *calibration_polygon_file
+    data_sinks:
+      <<: *data_input_formatted
+    # eq catalogue temporal range of interest: in yyyymmdd
+    calibration_date_range: [ 19950101, 20230228 ]
+
+  calibrate_ssm:
+    data_sources:
+      <<: *data_input_formatted
+    data_sinks:
+      calibration_data: *calibration_data
+    dimensions: *dimensions
+
+  forecast_ssm:
+    data_sources:
+      <<: *data_input_formatted
+      calibration_data: *calibration_data
+    data_sinks:
+      forecast_data: *forecast_data
+    dimensions: *dimensions
+    forecast_epochs:
+      [2023, 2024, 2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033]
+
+  parse_input:
+    gmm_path: *gmm_input_path
+    fcm_path: *fcm_input_path
+    data_sinks:
+      gmm_config: *config_tree
+      fcm_config: *config_tree
+
+  gmm_tables:
+    data_sources:
+      gmm_config: *gmm_config
+    data_sinks:
+      gmm_tables: *gmm_tables
+    dimensions:
+      magnitude: *magnitude
+      distance_rupture: *distance_rupture
+      gm_reference: *gm_reference
+      gm_surface: *gm_surface
+    coordinates: *coordinates
+    chunks:
+      zone: 1
+      magnitude: 10
+      distance_rupture: 10
+
+  fcm_tables:
+    data_sources:
+      fcm_config: *fcm_config
+    data_sinks:
+      fcm_tables: *fcm_tables
+    dimensions:
+      gm_surface: *gm_surface
+    coordinates:
+      SA_surface: *SA_surface
+      SA_g_surface: *SA_g_surface
+
+  hazard_prep:
+    data_sources:
+      gmm_tables: *gmm_tables
+    data_sinks:
+      hazard_prep: *hazard_prep
+    full_logictree: false 
+    n_workers: 8
+    chunks:
+      zone: 1
+      IM: 10
+      distance_rupture: 10
+      magnitude: 10
+
+  im_prep:
+    data_sources:
+      fcm_config: *fcm_config
+      gmm_config: *gmm_config
+      gmm_tables: *gmm_tables
+    data_sinks:
+      im_prep: *im_prep
+    n_workers: 4
+    n_sample: 1_000
+    n_batch: 5
+    full_logictree: false
+    rng_seed: 42
+    chunks:
+      zone: 1
+      magnitude: 20
+      distance_rupture: 20
+    s2s_mode: default # default: determined by GMM version; alternatives: epistemic (V7), aleatory (V5/6)
+    s2s_p2p_mode: consistent # s2s_p2p_mode: zero (NAM/SodM), consistent (TNO), full (implicit in V7)
+
+  risk_prep:
+    data_sources:
+      im_prep: *im_prep
+      fcm_tables: *fcm_tables
+    data_sinks:
+      risk_prep: *risk_prep
+    n_workers: 8
+    full_logictree: false
+    chunks:
+      IM_FCM: 1
+      zone: 1
+      magnitude: 20
+      distance_rupture: 20
+
+  exposure_prep:
+    data_sinks:
+      exposure_grid: *exposure_grid
+    zonation_file: *zonation_file
+    grid_crs: EPSG:28992
+    grid_spacing: 1000.
+
+  rupture_prep:
+    data_sinks:
+      rupture_prep: *rupture_prep
+    dimensions:
+      magnitude: *magnitude
+      distance_hypocenter: *distance_hypocenter
+      distance_rupture: *distance_rupture
+      azimuth:
+        length: 91
+        units: degrees
+    n_workers: 8
+    n_sample: 10_000
+    rng_seed: 42
+
+  source_integrator:
+    data_sources:
+      rupture_prep: *rupture_prep
+      forecast: *forecast
+      exposure_grid: *exposure_grid
+    full_logictree: false
+    data_sinks:
+      source_distribution: *source_distribution
+    rupture_azimuth: -30.
+    n_workers: 8
+
+  hazard_integrator:
+    data_sources:
+      source_distribution: *source_distribution
+      hazard_prep: *hazard_prep
+      exposure_grid: *exposure_grid
+    data_sinks:
+      hazard: *hazard
+    return_periods: [475., 2475.]
+
+  risk_integrator:
+    data_sources:
+      source_distribution: *source_distribution
+      risk_prep: *risk_prep
+      exposure_grid: *exposure_grid
+    data_sinks:
+      risk: *risk
