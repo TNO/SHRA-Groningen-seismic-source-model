@@ -18,6 +18,9 @@ data_sources:
   reservoir_thickness_data:
     type: xarray_dataarray
     path: [ *base_path, parse_ssm, reservoir_thickness_grid.h5 ]
+  # temperature_data:                       # optional: enable thermo-elastic stress model
+  #   type: xarray_dataarray
+  #   path: [ *base_path, parse_ssm, temperature_grid.h5 ]
 data_sinks:
   calibration_data:
     type: xarray_dataarray
@@ -62,5 +65,15 @@ dimensions:
   split_location:
     length: 40
     interval: [ 240, 269 ]
+  # tanh stress magnitude model
+  b_theta0:
+    length: 40
+    interval: [ 0.7, 1.2 ]
+  b_theta1:
+    length: 40
+    interval: [ 1.0E-5, 105 ]
+  b_theta2:
+    length: 40
+    interval: [ 1.0E+6, 4.0E+7 ]
 filters:
   cm_grid_version: [ cm_NAM2018 ]

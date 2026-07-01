@@ -68,6 +68,14 @@ def main(args: list):
         )
         compr = xr.concat([compr, compr_rticm], dim='cm_grid_version')
 
+    if 'raw_temp_file' in config['data_sources'].keys():
+        # Parse the temperature grid
+        temp = get_grid_data(
+            xf.construct_path(config['data_sources']['raw_temp_file']['path'])
+        )
+    else:
+        temp = None
+
     # Ensure consistent spatial grid
     spatial_base_grid = config.get('spatial_base_grid', 'pressure')  # 'pressure' (default) or 'compressibility'
     if spatial_base_grid == 'pressure':
@@ -80,6 +88,10 @@ def main(args: list):
         res_thickness = res_thickness.interp_like(
             pressure.isel(time=0), kwargs={"bounds_error": False, "fill_value": 0.0}
         )
+        if temp is not None:
+            temp = temp.interp_like(
+                pressure.isel(time=0), kwargs={"bounds_error": False, "fill_value": 0.0}
+            )
     elif spatial_base_grid == 'compressibility':
         pressure = pressure.interp_like(
             compr.isel(cm_grid_version=0), kwargs={"bounds_error": False, "fill_value": 0.0}
@@ -90,6 +102,10 @@ def main(args: list):
         res_thickness = res_thickness.interp_like(
             compr.isel(cm_grid_version=0), kwargs={"bounds_error": False, "fill_value": 0.0}
         )
+        if temp is not None:
+            temp = temp.interp_like(
+                compr.isel(cm_grid_version=0), kwargs={"bounds_error": False, "fill_value": 0.0}
+            )
     else:
         raise UserWarning(f'Base grid "{spatial_base_grid}" not supported. Choose "pressure" or "compressibility"')
 
@@ -99,6 +115,8 @@ def main(args: list):
     xf.store(res_depth, 'reservoir_depth_data', config)
     res_thickness = res_thickness.where(res_thickness > 1, np.nan)
     xf.store(res_thickness, 'reservoir_thickness_data', config)
+    if temp is not None:
+        xf.store(temp, 'temperature_data', config)
 
     # Parse and save the faults file
     faults = get_faults(
@@ -152,7 +170,7 @@ def get_grid_data(data_path, method="linear", dxdy=100):
         prop_name = prop_keys[0]
         grid = interp.griddata(points, raw_data[prop_name], (xgrid, ygrid), method=method)
     else:
-        prop_name = "pressure"  # Little hacky to just assume, but we don't use other dynamic grids
+        prop_name = "temperature" if prop_keys[0][0]=='T' else "pressure"  # Little hacky to just assume, but we don't use other dynamic grids
         timesteps = [pd.to_datetime(ts) for ts in sorted(p[1:].replace("_", "") for p in prop_keys)]
         coords = {"time": timesteps} | coords
         grid = np.zeros(shape=(len(timesteps), len(ylin), len(xlin)))
