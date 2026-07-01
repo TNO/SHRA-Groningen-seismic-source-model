@@ -8,7 +8,7 @@ from tools.bayes_tools import (
     get_posterior_probability,
     get_combined_posterior,
 )
-from models.magnitudes import mag_covariate_linear, mag_covariate_split
+from models.magnitudes import mag_covariate_linear, mag_covariate_split, mag_tanh_bval
 from models.rates import bo_2017_ll_terms
 from models.stresses import bo_2017_stress
 from models.etas import get_etas_rates
@@ -37,12 +37,26 @@ def main(args: list):
     compaction_coef = xf.open("compressibility_data", config)
     reservoir_depth = xf.open("reservoir_depth_data", config)
 
+    # Try to load temperature data, create dummy field if not available
+    temperature = None
+    if "temperature_data" in config.get("data_sources", {}):
+        try:
+            temperature = xf.open("temperature_data", config)
+        except (FileNotFoundError, OSError):
+            pass
+
+    if temperature is None:
+        temperature = xr.full_like(pressure, 100.0)
+        temperature.name = 'temperature'
+        temperature.attrs['description'] = 'Dummy constant temperature field (no temperature changes)'
+
     # Define the parameter ranges for which to calibrate
     params = xf.prepare_ds(config)
     reservoir_thickness = xf.open("reservoir_thickness_data", config)
 
     stress = bo_2017_stress(
         pressure,
+        temperature,
         compaction_coef,
         reservoir_depth,
         faults,
@@ -56,17 +70,21 @@ def main(args: list):
 
     # Calculate the log-likelihoods of the magnitude models and store in dataset:
     mag_log_likelihood = xr.Dataset()
-    # Stress-dependent magnitude model
+    dm = 0.0
+    # Stress-dependent magnitude models
     stress_at_events = covariate_at_event(stress["dcs"], catalogue)
     fmd_terms = mag_covariate_linear(stress_at_events, params.b0, params.b_slope)
-    mag_log_likelihood["linear_stress"] = magnitude_log_likelihood(fmd_terms, catalogue, dm=0.0, use_dask=True)
+    mag_log_likelihood["linear_stress"] = magnitude_log_likelihood(fmd_terms, catalogue, dm=dm, use_dask=True)
+    fmd_terms = mag_tanh_bval(stress_at_events, params.b_theta0, params.b_theta1, params.b_theta2)
+    mag_log_likelihood["tanh_stress"] = magnitude_log_likelihood(fmd_terms, catalogue, dm=dm, use_dask=True)
     # Split-thickness magnitude model
     thickness_at_events = covariate_at_event(reservoir_thickness, catalogue, rate=False)
     fmd_terms = mag_covariate_split(thickness_at_events, params.b_low, params.b_high, params.split_location)
-    mag_log_likelihood["split_thickness"] = magnitude_log_likelihood(fmd_terms, catalogue, dm=0.0, use_dask=False)
+    mag_log_likelihood["split_thickness"] = magnitude_log_likelihood(fmd_terms, catalogue, dm=dm, use_dask=False)
 
     # Rearrange activity rate ll arrays for the magnitude-frequency models
-    mm_selection = [mf for mf in mag_log_likelihood.data_vars]
+    mm_selection = config.get('magnitude_models', ['linear_stress', 'tanh_stress', 'split_thickness'])
+    mag_log_likelihood = mag_log_likelihood[mm_selection]
     ar_log_likelihood = ar_log_likelihood.expand_dims({'mm': mm_selection}).to_dataset(dim='mm')
 
     # Get posterior probability as well as combined post_prob of stress model parameters

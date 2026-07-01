@@ -190,6 +190,16 @@ dimensions_shared: &dimensions_shared
   split_location:
     length: 40
     interval: [ 240, 269 ]
+  # tanh stress magnitude model
+  b_theta0:
+    length: 40
+    interval: [ 0.7, 1.2 ]
+  b_theta1:
+    length: 40
+    interval: [ 1.0E-5, 105 ]
+  b_theta2:
+    length: 40
+    interval: [ 1.0E+6, 4.0E+7 ]
 
   # magnitude and mmax ranges
   branch_mmax: &branch_mmax

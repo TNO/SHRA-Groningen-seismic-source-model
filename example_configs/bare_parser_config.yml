@@ -24,6 +24,9 @@ data_sources:
   calibration_polygon_file:
     type: raw
     path: [ *base_path, inputfiles, Groningen_field_outline.csv ]
+  # raw_temp_file:                          # optional: enable thermo-elastic stress model
+  #   type: raw
+  #   path: [ *base_path, inputfiles, ReservoirModel_temperature.csv ]
 data_sinks:
   eq_catalogue:   
     type: xarray_dataset
@@ -43,5 +46,8 @@ data_sinks:
   reservoir_thickness_data:
     type: xarray_dataarray
     path: [ *base_path, parse_ssm, reservoir_thickness_grid.h5 ]
+  # temperature_data:                       # only written when raw_temp_file is provided
+  #   type: xarray_dataarray
+  #   path: [ *base_path, parse_ssm, temperature_grid.h5 ]
 # eq catalogue temporal range of interest: in yyyymmdd
 calibration_date_range: [ 19950101, 20201231 ]

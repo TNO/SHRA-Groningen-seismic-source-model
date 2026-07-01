@@ -146,6 +146,7 @@ def _perform_normalization(dataarray, target, sum_dims=None, norm_value=0.001213
 
 def bo_2017_stress(
         pressure,
+        temperature,
         compaction_coef,
         reservoir_depth,
         faults,
@@ -159,6 +160,8 @@ def bo_2017_stress(
     ----------
     pressure : xarray.Dataarray
         Reservoir pressure grid
+    temperature : xarray.Dataarray
+        Reservoir temperature grid
     compaction_coef : xarray.Dataarray
         Linear compaction coefficients
     faults : xarray.Dataset
@@ -193,30 +196,50 @@ def bo_2017_stress(
     if 'M_plastic' not in model_params:
         model_params['M_plastic'] = _get_M_elastic(model_params['poisson_ratio']).rename({'poisson_ratio': 'M_plastic'})
         out_name = 'elastic'
+    elif 'a_temp' in model_params:
+        raise ValueError("a_temp not supported in Bourne and Oates 2017 model with M_plastic")
 
-    print('Starting calculation for {} strain'.format(out_name))
-    loading_history = _prepare_loading_history(pressure, reservoir_depth, model_params['overburden_density'])
-    strain = rate_type_isotach_compaction_model(
-        loading_history['effective_vertical_stress'].set_index({'time': 'year_fraction'}),
-        compaction_coef,
-        model_params,
-        output_rates=True
-    )
-    H = _get_uniaxial_compaction_modulus(compaction_coef * model_params['factor_cm_d'], model_params['hs_exp'])
+    if 'a_temp' in model_params:
+        # Separate implementation for a_temp for simplicity
+        out_name = 'thermo-elastic'
+        # We only use the elastic cm_grid
+        compaction_coef = compaction_coef.sel(cm_grid_version='cm_NAM2018')
+        a_temp = model_params['a_temp']
+        H = _get_uniaxial_compaction_modulus(compaction_coef, model_params['hs_exp'])
+        # dP in MPa, dT in K
+        dp = _prepare_loading_history(pressure, reservoir_depth, model_params['overburden_density'])['pressure_change']
+        temperature = temperature.interp_like(pressure)
+        dtemp = temperature.isel(time=0) - temperature
+        strain = compaction_coef * (dp + a_temp * dtemp)
+        nu = model_params['poisson_ratio']
+        gamma = (1 - 2 * nu) / (2 * (1 - nu))
+        stress = strain * gamma * H
 
-    # Get stress for homogeneous thin sheet
-    stress = thin_sheet_stress(
-        strain_1D=strain,
-        H=H,
-        params=model_params,
-        sigma_v_initial=loading_history['effective_vertical_stress'].isel(time=0, drop=True),
-    )
-    # get stress CHANGE and revert sign (so that compression = positive)
-    stress = -1 * (stress - stress.isel({'time': 0}))['horizontal_stress']
+    else:
 
-    # return time coordinates
-    stress = stress.assign_coords({'time': loading_history.time})
-    strain = strain.assign_coords({'time': loading_history.time})
+        print('Starting calculation for {} strain'.format(out_name))
+        loading_history = _prepare_loading_history(pressure, reservoir_depth, model_params['overburden_density'])
+        strain = rate_type_isotach_compaction_model(
+            loading_history['effective_vertical_stress'].set_index({'time': 'year_fraction'}),
+            compaction_coef,
+            model_params,
+            output_rates=True
+        )
+        H = _get_uniaxial_compaction_modulus(compaction_coef * model_params['factor_cm_d'], model_params['hs_exp'])
+
+        # Get stress for homogeneous thin sheet
+        stress = thin_sheet_stress(
+            strain_1D=strain,
+            H=H,
+            params=model_params,
+            sigma_v_initial=loading_history['effective_vertical_stress'].isel(time=0, drop=True),
+        )
+        # get stress CHANGE and revert sign (so that compression = positive)
+        stress = -1 * (stress - stress.isel({'time': 0}))['horizontal_stress']
+
+        # return time coordinates
+        stress = stress.assign_coords({'time': loading_history.time})
+        strain = strain.assign_coords({'time': loading_history.time})
 
     # Get fault amplifier
     grad = _get_gradient(faults, model_params['rmax'], strain.x, strain.y)

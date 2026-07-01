@@ -3,6 +3,7 @@ import time
 import datetime
 import numpy as np
 import pandas as pd
+import xarray as xr
 from models.rates import bo_2017_forecast
 from models.stresses import bo_2017_stress
 from tools.catalogue_tools import filter_attr_str2list
@@ -33,6 +34,19 @@ def main(arguments: list):
     reservoir_thickness = xf.open("reservoir_thickness_data", config)
     catalogue = xf.open("eq_catalogue", config)
 
+    # Try to load temperature data, create dummy field if not available
+    temperature = None
+    if "temperature_data" in config.get("data_sources", {}):
+        try:
+            temperature = xf.open("temperature_data", config)
+        except (FileNotFoundError, OSError):
+            pass
+
+    if temperature is None:
+        temperature = xr.full_like(pressure, 100.0)
+        temperature.name = 'temperature'
+        temperature.attrs['description'] = 'Dummy constant temperature field (no temperature changes)'
+
     # Load calibration result
     calib_group = config["data_sources"]["calibration_data"]["group"]
     config["data_sources"]["calibration_data"]["group"] = f"{calib_group}/activity_rate_model"
@@ -51,6 +65,7 @@ def main(arguments: list):
 
     stress = bo_2017_stress(
         pressure,
+        temperature,
         compaction_coef,
         reservoir_depth,
         faults,
